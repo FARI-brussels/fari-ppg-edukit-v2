@@ -70,7 +70,7 @@ const selectedSensor = ref('S1')
 const selectedSignal = ref('TIA')
 const s1Enabled = ref(false)
 const s2Enabled = ref(false)
-const ledS1 = ref('red')
+const ledS1 = ref('infrared')
 const ledS2 = ref('red')
 
 const s1Options = ['TIA', 'HPF', 'LPF', 'AMP', 'HR', 'SPO2', 'TEMP']

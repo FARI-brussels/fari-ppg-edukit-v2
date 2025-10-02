@@ -27,20 +27,6 @@
           <h4 class="sensor-title">Sensor 2</h4>
           <FSwitch id="s2-enabled" v-model="localS2Enabled" />
         </div>
-        <div class="led-s2 led-container">
-          <div role="radiogroup">
-            <label v-for="color in ['red', 'green', 'infrared']" :key="color" class="led-control">
-              <CustomRadio
-                v-model="localLedS2"
-                :value="color"
-                name="ledS2"
-                class="mb-xs"
-                :disabled="!connected"
-              />
-              {{ color }}
-            </label>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -112,14 +98,14 @@ const emit = defineEmits<{
 // Local state
 const localS1Enabled = ref(props.s1Enabled ?? false)
 const localS2Enabled = ref(props.s2Enabled ?? false)
-const localLedS1 = ref(props.ledS1 ?? 'red')
+const localLedS1 = ref(props.ledS1 ?? 'infrared')
 const localLedS2 = ref(props.ledS2 ?? 'red')
 const localSelectedSensor = ref(props.selectedSensor ?? 'S1')
 const localSelectedSignal = ref(props.selectedSignal ?? 'TIA')
 const localDebug = ref(props.debug ?? false)
 
-const s1Options = ['TIA', 'HPF', 'LPF', 'AMP', 'HR', 'SPO2', 'TEMP']
-const s2Options = ['IR', 'RED', 'GREEN', 'HR', 'SPO2']
+const s1Options = ['TIA', 'HPF', 'LPF', 'AMP']
+const s2Options = ['IR', 'RED', 'GREEN']
 
 // Compute available signal options based on selected sensor
 const availableSignalOptions = computed(() =>
@@ -134,7 +120,6 @@ watch(localSelectedSensor, (newSensor) => {
   }
 })
 
-// Watch all local state and emit settings when they change
 watch(
   [
     localS1Enabled,
