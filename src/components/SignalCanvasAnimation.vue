@@ -5,18 +5,19 @@ import * as THREE from 'three'
 const container = ref<HTMLDivElement | null>(null)
 
 const CAPACITY = 1024
-const LINE_THICKNESS = 10
+const LINE_THICKNESS = 60
+const LINE_COUNT = 2
+const LINE_SPACING = 10 // vertical space between lines
 
 let renderer: THREE.WebGLRenderer,
   scene: THREE.Scene,
   camera: THREE.OrthographicCamera,
-  lineMesh: THREE.Mesh,
+  lineMeshes: THREE.Mesh[] = [],
   animationId: number,
   width = 0,
   height = 0,
-  time = 0
+  globalTime = 0
 
-// Your color palette as THREE.Color instances
 const palette = [
   new THREE.Color('#183E91'),
   new THREE.Color('#2E4FBF'),
@@ -72,51 +73,53 @@ function createWaveLine() {
   return new THREE.Mesh(geometry, material)
 }
 
-// Add time parameter to animate waveform horizontally
+// Waveform function with time parameter to animate horizontally
 function heartbeatWaveform(x: number, t: number) {
-  // x from 0 to 1 (normalized horizontal position)
-  // Animate wave by shifting the input with time 't'
-  const beats = 2.5
-  const phaseShift = t * 1 // controls speed
+  const pulseSpeed = 0.1
+  const pulseWidth = 0.1
 
-  const scaledX = x * beats * Math.PI * 2
+  // Pulse position continuously increases (no modulo)
+  const pulsePos = t * pulseSpeed
 
-  // Wave with time shift to animate horizontally
-  const base =
-    Math.sin(scaledX - phaseShift) * Math.exp(-((((x * beats - t) % 1) - 0.25) ** 2) * 50) * 4 +
-    Math.sin(scaledX * 0.5 - phaseShift * 0.5) * 0.8
+  // Circular distance between x and pulsePos mod 1
+  function circularDistance(a: number, b: number) {
+    const diff = Math.abs((a % 1) - (b % 1))
+    return Math.min(diff, 1 - diff)
+  }
 
-  return base
+  const dist = circularDistance(x, pulsePos)
+  const envelope = Math.exp(-(dist * dist) / (2 * pulseWidth * pulseWidth))
+
+  return Math.sin(x * Math.PI * 10) * envelope * 4 + Math.sin(x * Math.PI * 2) * 0.8
 }
 
-function updateLine() {
-  if (!lineMesh) return
-
+function updateLine(lineMesh: THREE.Mesh, lineIndex: number, lineTime: number) {
   const pos = lineMesh.geometry.attributes.position.array as Float32Array
   const colors = lineMesh.geometry.attributes.color.array as Float32Array
 
   const halfThick = LINE_THICKNESS / 2
 
-  for (let i = 0; i < CAPACITY; i++) {
-    const t = i / (CAPACITY - 1) // 0 to 1 along full width
+  // Calculate vertical offset to stack lines nicely, centered vertically
+  const totalHeight = (LINE_COUNT - 1) * LINE_SPACING
+  const yOffset = totalHeight / 2 - lineIndex * LINE_SPACING
 
+  for (let i = 0; i < CAPACITY; i++) {
+    const t = i / (CAPACITY - 1)
     const x = -width / 2 + t * width
 
-    // Animate waveform with current time
-    const yCenter = heartbeatWaveform(t, time) * (height / 10)
+    const yCenter = heartbeatWaveform(t, lineTime) * (height / 10)
 
     // Approximate tangent for normal vector
     const delta = 1 / CAPACITY
-    const yBefore = heartbeatWaveform(Math.max(t - delta, 0), time) * (height / 10)
-    const yAfter = heartbeatWaveform(Math.min(t + delta, 1), time) * (height / 10)
+    const yBefore = heartbeatWaveform(Math.max(t - delta, 0), lineTime) * (height / 10)
+    const yAfter = heartbeatWaveform(Math.min(t + delta, 1), lineTime) * (height / 10)
     const tangent = new THREE.Vector2(width * delta, yAfter - yBefore).normalize()
     const normal = new THREE.Vector2(-tangent.y, tangent.x)
 
-    // Two vertices per point
     const leftX = x + normal.x * halfThick
-    const leftY = yCenter + normal.y * halfThick
+    const leftY = yCenter + normal.y * halfThick + yOffset
     const rightX = x - normal.x * halfThick
-    const rightY = yCenter - normal.y * halfThick
+    const rightY = yCenter - normal.y * halfThick + yOffset
 
     pos[i * 6 + 0] = leftX
     pos[i * 6 + 1] = leftY
@@ -126,8 +129,7 @@ function updateLine() {
     pos[i * 6 + 4] = rightY
     pos[i * 6 + 5] = 0
 
-    // Color flowing horizontally with time
-    const colorT = (t + time * 0.1) % 1
+    const colorT = (t + lineTime * 0.1) % 1
     const color = getColorAt(colorT)
 
     colors[i * 6 + 0] = color.r
@@ -144,8 +146,15 @@ function updateLine() {
 }
 
 function animate() {
-  time += 0.01 // slower smooth animation
-  updateLine()
+  globalTime += 0.01
+
+  // Define different speed multipliers for each line
+  const speeds = [1, 1.4, 0.7]
+
+  for (let i = 0; i < LINE_COUNT; i++) {
+    updateLine(lineMeshes[i], i, globalTime * speeds[i])
+  }
+
   renderer.render(scene, camera)
   animationId = requestAnimationFrame(animate)
 }
@@ -157,10 +166,12 @@ function resizeRenderer() {
 
   renderer.setSize(width, height)
 
+  const padding = 80 // Add vertical padding (increase if needed)
+
   camera.left = -width / 2
   camera.right = width / 2
-  camera.top = height / 2
-  camera.bottom = -height / 2
+  camera.top = height / 2 + padding
+  camera.bottom = -height / 2 - padding
   camera.updateProjectionMatrix()
 }
 
@@ -174,8 +185,12 @@ onMounted(() => {
   camera.position.set(0, 0, 10)
   camera.lookAt(0, 0, 0)
 
-  lineMesh = createWaveLine()
-  scene.add(lineMesh)
+  // Create and add multiple lines
+  for (let i = 0; i < LINE_COUNT; i++) {
+    const mesh = createWaveLine()
+    scene.add(mesh)
+    lineMeshes.push(mesh)
+  }
 
   container.value?.appendChild(renderer.domElement)
 
@@ -188,16 +203,27 @@ onMounted(() => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(animationId)
   window.removeEventListener('resize', resizeRenderer)
+
   renderer.dispose()
-  lineMesh.geometry.dispose()
-  lineMesh.material.dispose()
+  lineMeshes.forEach((mesh) => {
+    mesh.geometry.dispose()
+    mesh.material.dispose()
+  })
 })
 </script>
 
 <template>
   <div
     ref="container"
-    style="width: 100%; height: 460px; overflow: hidden; background: transparent"
+    style="
+      width: 110%;
+      height: 600px;
+      overflow: hidden;
+      background: transparent;
+      position: absolute;
+      top: 150px;
+      left: -100px;
+    "
   ></div>
 </template>
 
