@@ -60,7 +60,7 @@ import {
 } from 'fari-component-library'
 import { ref, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
-import SignalCanvasAnimation from '@/components/SignalCanvasAnimation2.vue'
+import SignalCanvasAnimation from '@/components/SignalCanvasAnimation.vue'
 
 import { useDataStore } from '@/stores/cms'
 

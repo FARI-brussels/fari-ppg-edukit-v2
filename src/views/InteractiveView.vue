@@ -26,14 +26,16 @@
 
         <SettingsDropdown icon="settings" location="bottom-left" title="Settings">
           <SensorControls
-            :connected="connected"
-            :s1Enabled="s1Enabled"
-            :s2Enabled="s2Enabled"
-            :ledS1="ledS1"
-            :ledS2="ledS2"
-            :selectedSensor="selectedSensor"
-            :selectedSignal="selectedSignal"
-            :debug="debug"
+            v-bind="{
+              connected,
+              s1Enabled,
+              s2Enabled,
+              ledS1,
+              ledS2,
+              selectedSensor,
+              selectedSignal,
+              debug,
+            }"
             @update:settings="updateSettings"
           />
         </SettingsDropdown>
@@ -44,9 +46,14 @@
     <div style="display: flex; gap: 16px; flex-wrap: wrap; margin: 8px 0; align-items: center">
       <div></div>
     </div>
-
     <div style="margin-top: 14px">
-      <ThreeSignalCanvas :data="visibleData" :color="canvasColor" background="#0b1020" />
+      <ThreePulseSignal
+        v-bind="{
+          data: visibleData,
+          beat,
+          bpm,
+        }"
+      />
     </div>
 
     <div v-if="statusMsg" style="margin-top: 8px; color: #666">{{ statusMsg }}</div>
@@ -54,12 +61,78 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
-import ThreeSignalCanvas from '../components/ThreeSignalCanvas2.vue'
+import { ref, computed, reactive, onMounted, onBeforeUnmount } from 'vue'
+import ThreePulseSignal from '../components/ThreePulseSignal.vue'
 import SensorControls from '../components/SensorControls.vue'
 import SettingsDropdown from '../components/SettingsDropdown.vue'
 import { WebSerialService } from '../services/webserial'
 import { FDemoAppBar, FButton } from 'fari-component-library'
+
+const beat = ref(0)
+const bpm = ref(72)
+
+const useMockData = ref(true)
+let mockInterval: number | null = null
+
+function generateMockPPGSignal(phase: number, amplitude: number = 100) {
+  // Simulate a PPG waveform (Just a sinewave basically)
+  let value = amplitude * Math.sin(phase)
+
+  value += amplitude * 0.3 * Math.sin(2 * phase) // Dicrotic notch simulation
+  value += (Math.random() - 0.5) * amplitude * 0.1 // Add noise
+  return value
+}
+
+function startMockData() {
+  console.log('fitta')
+  if (mockInterval) clearInterval(mockInterval)
+  mockInterval = setInterval(() => {
+    if (!useMockData.value || connected.value) return
+
+    const heartRate = bpm.value / 60
+    const time = Date.now() / 1000
+    const phase = (2 * Math.PI * time * heartRate) % (2 * Math.PI)
+
+    const mockValue = generateMockPPGSignal(phase)
+
+    if (s1Enabled.value) {
+      pushSample(s1.TIA, mockValue)
+      pushSample(s1.HPF, mockValue * 0.9)
+      pushSample(s1.LPF, mockValue * 0.8)
+      pushSample(s1.AMP, mockValue * 1.1)
+      pushSample(s1.HR, bpm.value)
+      pushSample(s1.SPO2, 95 + Math.random() * 5)
+      pushSample(s1.TEMP, 36.5 + Math.random() * 1)
+    }
+
+    if (s2Enabled.value) {
+      pushSample(s2.IR, mockValue * 0.95)
+      pushSample(s2.RED, mockValue * 0.9)
+      pushSample(s2.GREEN, mockValue * 0.85)
+      pushSample(s2.HR, bpm.value)
+      pushSample(s2.SPO2, 95 + Math.random() * 5)
+    }
+
+    if (Math.sin(phase) > 0.95) onRPeak()
+  }, 1000 / 100)
+}
+
+function stopMockData() {
+  if (mockInterval) {
+    clearInterval(mockInterval)
+    mockInterval = null
+  }
+}
+
+onMounted(() => {
+  if (useMockData.value && !connected.value) startMockData()
+})
+
+onBeforeUnmount(() => stopMockData())
+
+function onRPeak() {
+  beat.value += 1
+}
 
 const service = new WebSerialService()
 
@@ -68,19 +141,19 @@ const statusMsg = ref('')
 const debug = ref(false)
 const selectedSensor = ref('S1')
 const selectedSignal = ref('TIA')
-const s1Enabled = ref(false)
+const s1Enabled = ref(true)
 const s2Enabled = ref(false)
 const ledS1 = ref('infrared')
 const ledS2 = ref('red')
 
-const s1Options = ['TIA', 'HPF', 'LPF', 'AMP', 'HR', 'SPO2', 'TEMP']
-const s2Options = ['IR', 'RED', 'GREEN', 'HR', 'SPO2']
+// const s1Options = ['TIA', 'HPF', 'LPF', 'AMP', 'HR', 'SPO2', 'TEMP']
+// const s2Options = ['IR', 'RED', 'GREEN', 'HR', 'SPO2']
 
 const maxPoints = 500
 const s1 = reactive({ TIA: [], HPF: [], LPF: [], AMP: [], HR: [], SPO2: [], TEMP: [] })
 const s2 = reactive({ IR: [], RED: [], GREEN: [], HR: [], SPO2: [] })
 
-function pushSample(arr, v) {
+function pushSample(arr: any[], v: any) {
   const num = Number.isFinite(v) ? v : NaN
   if (!Number.isFinite(num)) return
   if (arr.length < maxPoints) {
@@ -97,7 +170,7 @@ function pushSample(arr, v) {
   arr._rbFull = true
 }
 
-service.setOnLine((raw) => {
+service.setOnLine((raw: unknown) => {
   const line = String(raw || '').trim()
   if (!line) return
   if (debug.value) console.log('[RAW]', line)
@@ -191,7 +264,6 @@ async function updateSettings(settings: {
   selectedSignal: string
   debug: boolean
 }) {
-  // Handle sensor enable/disable changes
   if (settings.s1Enabled !== s1Enabled.value) {
     try {
       await service.setSensorEnabled('S1', settings.s1Enabled)
@@ -209,7 +281,6 @@ async function updateSettings(settings: {
     }
   }
 
-  // Handle LED mode changes
   if (settings.ledS1 !== ledS1.value) {
     try {
       await service.setLedMode('S1', settings.ledS1)
@@ -227,7 +298,6 @@ async function updateSettings(settings: {
     }
   }
 
-  // Update other settings
   selectedSensor.value = settings.selectedSensor
   selectedSignal.value = settings.selectedSignal
   debug.value = settings.debug
@@ -268,7 +338,6 @@ const canvasColor = computed(() => {
 </script>
 
 <style scoped lang="scss">
-/* Unchanged styles */
 .view {
   display: flex;
   flex-direction: column;
