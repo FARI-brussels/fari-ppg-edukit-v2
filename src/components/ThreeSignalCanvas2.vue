@@ -6,6 +6,7 @@ const props = defineProps({
   data: { type: Array, required: true },
   color: { type: String, default: '#00e5ff' },
   background: { type: String, default: 'transparent' },
+  peakDetected: { type: Boolean, default: false },
 })
 
 const container = ref(null)
@@ -13,7 +14,9 @@ let renderer, scene, camera, grid, lineMesh, animationId
 let width = 0,
   height = 0
 const CAPACITY = 1024
-const LINE_THICKNESS = 0.5 // Consistent cartoonish width (~6-8 pixels)
+const BASE_LINE_THICKNESS = 0.5 // Base thickness
+const PEAK_LINE_THICKNESS = 1.5 // Thickness during peak
+const currentThickness = ref(BASE_LINE_THICKNESS)
 
 function createGrid() {
   const gridGroup = new THREE.Group()
@@ -140,7 +143,7 @@ function updateLine() {
     for (let i = 0; i < curvePoints.length; i++) {
       const p = curvePoints[i]
       const n = normals[i]
-      const halfThick = LINE_THICKNESS / 2
+      const halfThick = currentThickness.value / 2
       pos[i * 6 + 0] = p.x + n.x * halfThick
       pos[i * 6 + 1] = p.y + n.y * halfThick
       pos[i * 6 + 2] = p.z
@@ -231,6 +234,7 @@ onBeforeUnmount(() => {
   }
 })
 
+// Watch for color changes and smoothly transition
 watch(
   () => props.color,
   (newColor) => {
@@ -246,6 +250,71 @@ watch(
         if (t < 1) requestAnimationFrame(transition)
       }
       requestAnimationFrame(transition)
+    }
+  },
+)
+
+// Watch for peak detection and trigger blink effect
+watch(
+  () => props.peakDetected,
+  (isPeak) => {
+    if (isPeak && lineMesh) {
+      // Animate thickness increase
+      const startThickness = currentThickness.value
+      const endThickness = PEAK_LINE_THICKNESS
+      let t = 0
+      const duration = 150 // 150ms to peak
+      
+      const thicknessUp = () => {
+        t += 16 / duration
+        if (t >= 1) {
+          t = 1
+          currentThickness.value = endThickness
+          // Start the return animation
+          setTimeout(() => {
+            let t2 = 0
+            const returnDown = () => {
+              t2 += 16 / duration
+              if (t2 >= 1) t2 = 1
+              currentThickness.value = endThickness + (BASE_LINE_THICKNESS - endThickness) * t2
+              if (t2 < 1) requestAnimationFrame(returnDown)
+            }
+            requestAnimationFrame(returnDown)
+          }, 50)
+        } else {
+          currentThickness.value = startThickness + (endThickness - startThickness) * t
+          requestAnimationFrame(thicknessUp)
+        }
+      }
+      requestAnimationFrame(thicknessUp)
+
+      // Animate brightness increase
+      const baseColor = new THREE.Color(props.color)
+      const brightColor = baseColor.clone().multiplyScalar(1.8) // 80% brighter
+      let tb = 0
+      
+      const brightnessUp = () => {
+        tb += 16 / duration
+        if (tb >= 1) {
+          tb = 1
+          lineMesh.material.color.copy(brightColor)
+          // Start the return animation
+          setTimeout(() => {
+            let tb2 = 0
+            const brightnessDown = () => {
+              tb2 += 16 / duration
+              if (tb2 >= 1) tb2 = 1
+              lineMesh.material.color.lerpColors(brightColor, baseColor, tb2)
+              if (tb2 < 1) requestAnimationFrame(brightnessDown)
+            }
+            requestAnimationFrame(brightnessDown)
+          }, 50)
+        } else {
+          lineMesh.material.color.lerpColors(baseColor, brightColor, tb)
+          requestAnimationFrame(brightnessUp)
+        }
+      }
+      requestAnimationFrame(brightnessUp)
     }
   },
 )

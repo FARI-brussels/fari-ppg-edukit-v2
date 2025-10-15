@@ -151,4 +151,12 @@ export class WebSerialService {
     }
     throw new Error('Unknown sensor for intensity')
   }
+
+  async setSamplingFrequency(frequency) {
+    const map = { 50: '7', 125: '8', 200: '9' }
+    const cmd = map[frequency]
+    if (!cmd) throw new Error('Invalid sampling frequency. Must be 50, 125, or 200 Hz')
+    console.log('[Serial Cmd] setSamplingFrequency', { frequency, cmd })
+    await this.sendRaw(cmd)
+  }
 }
